@@ -72,7 +72,23 @@ if (length(chrY)>0) {
 	metaplasticCBS <- metaplasticCBS[-chrY,]
 }
 
+library(gdata)
+hd <- read.xls("allHD.ASCAT.ABSOLUTE.hg19.xlsx",1,stringsAsFactors=F) 
+
+xx <- apply(assayDataElement(metaplasticCBS,"GL"),2,function(x){x[which(x== -2)] <- -1; x})
+for (i in 1:nrow(hd)) {
+	print(i)
+	xx[which(fData(metaplasticCBS)$chrom==hd$chrom[i] & 
+		((fData(metaplasticCBS)$start+fData(metaplasticCBS)$end)/2)>=hd$start[i] & 
+		((fData(metaplasticCBS)$start+fData(metaplasticCBS)$end)/2)<=hd$end[i]),hd$Sample[i]] <- -2}
+
+newCBS <- metaplasticCBS
+assayDataElement(newCBS,"GL") <- xx
+
+metaplasticCBS <- newCBS
+rm(newCBS)
 save(metaplasticCBS, file="20130519_metaplasticCBS.RData")
+
 
 ###################################### End of data preparation ###############################
 
@@ -85,8 +101,6 @@ metaplastic.heatmap <- removeProbesByMAD(metaplastic.mapped.lumi, mad.limit=1.2)
 metaplastic.heatmap <- centerGenes(metaplastic.heatmap)
 metaplastic.heatmap <- removeReplicateProbesByMAD(metaplastic.heatmap)
 # 1411 probes remaining
-
-save(metaplastic.heatmap, file="20130519_metaplastic.heatmap.RData")
 
 pheno_colours =brewer.pal(5,"Dark2")
 
@@ -127,9 +141,45 @@ dietSAM2Class(metaplastic.de, metaplastic.de$spindle.group, fData.ID="ILMN",
 # 0 Spindle significant probes with Q value less than 1 %
 # 190 non-spindle significant probes with Q value less than 1 %
 
+
 ## copy number analysis
 
 plotFrequency(metaplasticCBS, device="PNG", project="Metaplastic.SNP6")
+
+gl <- assayDataElement(metaplasticCBS,"GL")
+band <- paste(fData(metaplasticCBS)$chrom, substr(fData(metaplasticCBS)$cytoband,1,1), sep="")
+chrlen <- unlist(lapply(unique(band),function(cytoband) {
+	max(fData(metaplasticCBS)$end[which(band== cytoband)])-min(fData(metaplasticCBS)$start[which(band== cytoband)])
+}))
+names(chrlen) <- unique(band)
+
+newgl <- do.call("rbind", lapply(unique(band), function(arm) {
+	smallgl <- gl[which(band==arm),]
+	annot <- fData(metaplasticCBS)[which(band==arm),]
+	for (i in 1:ncol(gl)) {
+		rr <- rle(smallgl[,i])
+		ends <- cumsum(rr$lengths)
+		if(length(ends)==1) {
+			starts=1
+		} else {
+			starts=c(1,ends[1:(length(ends)-1)]+1)
+		}
+		tab <- cbind(rr$values, starts, ends)
+		for (n in which(tab[,1]==2)){
+			if(annot$end[tab[n,3]]-annot $start[tab[n,2]] > chrlen[arm]/4) {
+				smallgl[tab[n,2]:tab[n,3],i] <- 1
+			}
+		}
+	}
+	smallgl
+}))
+
+newCBS <- metaplasticCBS
+assayDataElement(newCBS,"GL") <- newgl
+
+plotFrequency(newCBS, device="PNG", project="Metaplastic.SNP6.focal")
+listBreaksGL(newCBS,  contig=8, project="metaplastic.SNP6")
+listBreaksGLAD(newCBS, gain.count=3, amp.count=2, project="metaplastic.SNP6", contig=8)
 
 pdf("metaplastic.SNP6.heatmap.pdf", width=4, height=6)
 cghHeatmap(metaplasticCBS, dist.method="euclidean", main="metaplastic SNP6", phenotypes=pData(metaplasticCBS)$Cellular_type_simplified, pheno.colours= pheno_colours)
@@ -163,33 +213,34 @@ latticePlotFishers(metaplasticCBS.FE.CNcluster1.v.CNcluster2, project="metaplast
 
 save(metaplasticCBS.FE.CNcluster1.v.CNcluster2, file="20130520_metaplasticCBS.FE.CNcluster1.v.CNcluster2.RData")
 
+
+
 ### subtypes
 
 metaplasticCBS.FE.chondroid.v.rest  <- fisherTestCGH(metaplasticCBS, 
 	pheno= pData(metaplasticCBS)$chondroid.group, 
 	project="metaplastic_SNP6_Fisher_chondoid.v.rest")
 listBreaksFisher(metaplasticCBS.FE.chondroid.v.rest, project="metaplastic_SNP6_Fisher_chondoid.v.rest", 
-	probeID=fData(metaplasticCBS.FE.chondroid.v.rest)
+	probeID=fData(metaplasticCBS.FE.chondroid.v.rest)$probeID)
 latticePlotFishers(metaplasticCBS.FE.chondroid.v.rest, project="metaplastic_SNP6_Fisher_chondoid.v.rest")
 save(metaplasticCBS.FE.chondroid.v.rest, file="20130519_metaplasticCBS.FE.chondroid.v.rest.RData")
 
 metaplasticCBS.FE.spindle.v.rest  <- fisherTestCGH(metaplasticCBS, 
 	pheno= pData(metaplasticCBS)$spindle.group, 
 	project="metaplastic_SNP6_Fisher_spindle.v.rest")
-listBreaksFisher(metaplasticCBS.FE.spindle.v.rest, project="metaplastic_SNP6_Fisher_spindle.v.rest", probeID=fData(metaplasticCBS.FE.spindle.v.rest)
+listBreaksFisher(metaplasticCBS.FE.spindle.v.rest, project="metaplastic_SNP6_Fisher_spindle.v.rest", 
+	probeID=fData(metaplasticCBS.FE.spindle.v.rest)$probeID)
 latticePlotFishers(metaplasticCBS.FE.spindle.v.rest, project="metaplastic_SNP6_Fisher_spindle.v.rest")
 save(metaplasticCBS.FE.spindle.v.rest, file="20130519_metaplasticCBS.FE.spindle.v.rest.RData")
 
 metaplasticCBS.FE.squamous.v.rest  <- fisherTestCGH(metaplasticCBS, 
 	pheno= pData(metaplasticCBS)$squamous.group, 
 	project="metaplastic_SNP6_Fisher_squamous.v.rest")
-listBreaksFisher(metaplasticCBS.FE.squamous.v.rest, project="metaplastic_SNP6_Fisher_squamous.v.rest", probeID=fData(metaplasticCBS.FE.squamous.v.rest)
+listBreaksFisher(metaplasticCBS.FE.squamous.v.rest, project="metaplastic_SNP6_Fisher_squamous.v.rest", 
+	probeID=fData(metaplasticCBS.FE.squamous.v.rest)$probeID)
 latticePlotFishers(metaplasticCBS.FE.squamous.v.rest, project="metaplastic_SNP6_Fisher_squamous.v.rest")
 save(metaplasticCBS.FE.squamous.v.rest, file="20130519_metaplasticCBS.FE.squamous.v.rest.RData")
 
-pheno_colours =brewer.pal(5,"Dark2")
-plotPhenoBar(metaplasticCBS, assayData(metaplasticCBS)$GL, 
-	dist.method="euclidean", main="metaplastic SNP6", phenotypes=pData(metaplasticCBS)$Cellular_type_simplified, device="PDF", project="metaplastic.SNP6", pheno.colours=pheno_colours)
 
 
 #### overlay
@@ -222,3 +273,4 @@ metaplastic.exp.cgh.uni <- removeReplicateProbesByMAD(metaplastic.exp.cgh.overla
 
 splitHeatmap(metaplastic.exp.cgh.uni, chrom=8, start= 99413631, end= 104345094, project="8q22", device="PDF", heatmap.scale=1)
 splitHeatmap(metaplastic.exp.cgh.uni, chrom=8, start= 117654369, end= 131029375, project="8q24.12-8q24.2", device="PDF", heatmap.scale=1)
+
